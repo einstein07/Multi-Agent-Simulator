@@ -1,0 +1,21 @@
+{
+  "num_agents": 20,
+  "arena_size": 500,
+  "time_steps": 2000,
+  "light_sources": [
+    {"x": 100, "y": 490, "color": "green"},
+    {"x": 400, "y": 490, "color": "yellow"}
+  ],
+  "init_robot_bounds": 
+    {"x_min": 245, "y_min": 0,"x_max": 255, "y_max": 5},
+  "robots_speed": 1,
+  "robots_direction": 0,
+  "no_turn_threshold": 10,
+  "soft_turn_threshold": 25,
+  "hard_turn_threshold": 60,
+  "steps_per_second": 10,
+  "termination_radius": 50,
+  "commitment_update_time": 5,
+  "vizualize": true
+}
+
