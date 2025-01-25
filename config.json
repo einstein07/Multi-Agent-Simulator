@@ -1,21 +1,28 @@
 {
+  "log_directory": "./experiment_logs",
+  "experiment_name": "2_targets",
+  "num_runs": 1,
   "num_agents": 20,
-  "arena_size": 500,
-  "time_steps": 2000,
+  "x_width": 10,
+  "y_height": 40,
+  "center": [0, 0],
+  "time_steps": 4000,
   "light_sources": [
-    {"x": 100, "y": 490, "color": "green"},
-    {"x": 400, "y": 490, "color": "yellow"}
+    {"x": -4, "y": 18, "color": "green"},
+    {"x": 4, "y": 18, "color": "red"}
   ],
   "init_robot_bounds": 
-    {"x_min": 245, "y_min": 0,"x_max": 255, "y_max": 5},
-  "robots_speed": 1,
-  "robots_direction": 0,
-  "no_turn_threshold": 10,
+    {"x_min": -1, "y_min": -20,"x_max": 1, "y_max": -18},
+  "robots_speed": 0.1,
+  "angular_speed": 2,
+  "eta": 0.1,  
+  "robots_direction": 90,
+  "no_turn_threshold": 5,
   "soft_turn_threshold": 25,
-  "hard_turn_threshold": 60,
+  "hard_turn_threshold": 50,
   "steps_per_second": 10,
-  "termination_radius": 50,
+  "termination_radius": 1,
   "commitment_update_time": 5,
-  "vizualize": true
+  "visualize": true
 }
 
