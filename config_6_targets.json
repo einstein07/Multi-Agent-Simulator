@@ -14,7 +14,7 @@
   "init_robot_bounds": 
     {"x_min": -1, "y_min": -20,"x_max": 1, "y_max": -18},
   "robots_speed": 0.1,
-  "angular_speed": 2,
+  "angular_speed": 8.14203157894737,
   "eta": 0.1,  
   "robots_direction": 90,
   "no_turn_threshold": 5,

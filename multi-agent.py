@@ -7,6 +7,7 @@ import time
 from datetime import datetime
 from collections import defaultdict
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.animation import FuncAnimation
 
 # --------------------------------------------------------------------
@@ -32,7 +33,7 @@ class WheelTurningParams:
 class Agent:
     """Represents a single agent in the simulation."""
 
-    def __init__(self, id, x, y, speed, track_width, direction, commitment, eta, light_ids, thresholds, turning_mechanism):
+    def __init__(self, id, x, y, speed, track_width, direction, commitment, eta, light_ids, fov, thresholds, turning_mechanism):
         self.id = id
         self.x = x
         self.y = y
@@ -42,6 +43,7 @@ class Agent:
         self.commitment = commitment
         self.eta = eta
         self.light_ids = light_ids
+        self.fov = fov
         self.trajectory = [(x, y)]
         self.received_broadcasts = {}
         self.broadcast = None
@@ -80,7 +82,7 @@ class Agent:
         return angle
 
     # --------------------------------------------------------------------
-    # 3. State Transition Function
+    # State Transition Function
     # --------------------------------------------------------------------
     def update_turning_mechanism(self, c_heading_angle, params):
         #print('init TM: ', params.turning_mechanism)
@@ -120,7 +122,7 @@ class Agent:
         return params.turning_mechanism
 
     # --------------------------------------------------------------------
-    # 4. Compute Wheel Speeds for Each Mechanism
+    # Compute Wheel Speeds for Each Mechanism
     # --------------------------------------------------------------------
     def compute_wheel_speeds(self, turning_mechanism, c_heading_angle, params):
         """
@@ -177,7 +179,7 @@ class Agent:
         return fLeftWheelSpeed, fRightWheelSpeed
 
     # --------------------------------------------------------------------
-    # 5. Differential Drive Pose Update
+    # Differential Drive Pose Update
     # --------------------------------------------------------------------
     def update_pose(self, x, y, theta, v_left, v_right, track_width, dt):
         """
@@ -248,11 +250,32 @@ class Agent:
         if self.received_broadcasts.get(sender_id, None) != broadcast_value:
             self.received_broadcasts[sender_id] = broadcast_value
 
-    def update_commitment(self):
-        """Update the agent's commitment based on received messages."""
+    def update_commitment(self, light_sources):
+        """Update the agent's commitment based on perception."""
         if random.random() < self.eta:
-            self.commitment = random.choice(self.light_ids)
+            #self.commitment = random.choice(self.light_ids)
+            # Filter available targets that lie within the FOV
+            visible_targets = []
+            for light_id in self.light_ids:
+                #print(light_sources)
+                # Check if light source is within FOV
+                if self.is_in_fov(light_sources[light_id], self.fov):
+                    #visible_targets.append(light_id)
+                    visible_targets.append(light_sources[light_id])
+                """else:
+                    print('Light ', light_id, ' not in fov')"""
+
+            if visible_targets:  # Only choose if there's at least one visible light
+                # before quality consideration
+                #self.commitment = random.choice(visible_targets)
+                # Extract quality values as weights
+                weights = [target.quality for target in visible_targets]
+                # Select one LightSource object based on weights
+                selected_target = random.choices(visible_targets, weights=weights, k=1)[0]
+                # Assign the id of the selected light source to self.commitment
+                self.commitment = selected_target.id
         else:
+            """Update the agent's commitment based on received messages."""
             if self.received_broadcasts:
                 valid_commitments = [v for v in self.received_broadcasts.values() if v != 0]
                 if valid_commitments:
@@ -265,15 +288,31 @@ class Agent:
         self.csv_writer.writerow([time_step, self.commitment, opinions])
         self.my_opinions.clear()
 
+    def is_in_fov(self, light_source, fov):
+        """
+        Returns True if 'light_source' is within 'fov' (in radians)
+        of the agent's facing direction.
+        """
+        dx = light_source.x - self.x
+        dy = light_source.y - self.y
+
+        # Angle to the light source
+        angle_to_light = math.atan2(dy, dx)
+
+        # Signed difference between agent's direction and angle to light
+        angle_diff = (angle_to_light - self.direction + math.pi) % (2 * math.pi) - math.pi
+
+        return abs(angle_diff) <= fov
 
 class LightSource:
     """Represents a target light source in the environment."""
 
-    def __init__(self, id, x, y, color):
+    def __init__(self, id, x, y, color, quality):
         self.id = id
         self.x = x
         self.y = y
         self.color = color
+        self.quality = quality
 
 
 class Simulation:
@@ -305,6 +344,8 @@ class Simulation:
         self.light_sources = {light['id']: LightSource(**light)
                               for light in self.config['light_sources']}
         self.light_ids = list(self.light_sources.keys())
+        self.fov = math.radians(self.config['fov'])
+        self.communication_range = float('inf') if self.config.get('communication_range', -1) == -1 else self.config['communication_range']
 
         # Simulation parameters
         self.num_agents = self.config['num_agents']
@@ -363,6 +404,7 @@ class Simulation:
                 commitment=commitments[i],
                 eta=self.eta,
                 light_ids=self.light_ids,
+                fov=self.fov,
                 thresholds = self.thresholds,
                 turning_mechanism = NO_TURN
             )
@@ -517,18 +559,45 @@ class Simulation:
         # Update commitments at specified interval
         if t % self.config['commitment_update_time'] == 0:
             for agent in self.agents:
-                agent.update_commitment()
+                agent.update_commitment(self.light_sources)
 
         # Move agents and log data
         self.move_agents()
         self.log_data(t)
 
-    def broadcast_commitments(self):
-        """Exchange broadcasts between all agents."""
+    """def broadcast_commitments(self):
+        #Exchange broadcasts between all agents.
         for agent in self.agents:
             for neighbor in self.agents:
                 if agent.id != neighbor.id:
-                    neighbor.receive_broadcast(agent.id, agent.broadcast)
+                    neighbor.receive_broadcast(agent.id, agent.broadcast)"""
+
+    def broadcast_commitments(self) -> None:
+        """
+        Broadcast commitments between agents within communication range.
+
+        Agents send their broadcast data to neighbors within self.communication_range.
+        Assumes each agent has attributes: id, x, y, broadcast, and a receive_broadcast method.
+
+        Attributes:
+            self.agents: List of agent objects.
+            self.communication_range: Float defining the maximum distance for communication.
+        """
+        # Pre-compute agent positions for vectorized distance calculation
+        positions = np.array([[agent.x, agent.y] for agent in self.agents])
+        n_agents = len(self.agents)
+
+        # Compute pairwise distances efficiently
+        distances = np.linalg.norm(positions[:, np.newaxis] - positions, axis=2)
+
+        # Broadcast within range
+        for i in range(n_agents):
+            sender = self.agents[i]
+            # Find neighbors within range (excluding self)
+            in_range = (distances[i] <= self.communication_range) & (np.arange(n_agents) != i)
+            for j in np.where(in_range)[0]:
+                receiver = self.agents[j]
+                receiver.receive_broadcast(sender.id, sender.broadcast)
 
     def move_agents(self):
         """Update positions of all agents."""
@@ -551,7 +620,7 @@ class Simulation:
 
 
 if __name__ == "__main__":
-    with open("config_4_targets.json") as f:
+    with open("config_2_targets.json") as f:
         config = json.load(f)
 
     simulation = Simulation(config)
