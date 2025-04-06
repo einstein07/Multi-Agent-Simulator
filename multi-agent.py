@@ -124,7 +124,7 @@ class Agent:
     # --------------------------------------------------------------------
     # Compute Wheel Speeds for Each Mechanism
     # --------------------------------------------------------------------
-    def compute_wheel_speeds(self, turning_mechanism, c_heading_angle, params):
+    def compute_wheel_speeds(self, turning_mechanism, c_heading_angle, c_heading_magnitude, params):
         """
         Given the turning mechanism (NO_TURN, SOFT_TURN, HARD_TURN),
         compute the left/right wheel linear speeds in m/s.
@@ -135,16 +135,19 @@ class Agent:
         :return: (v_left, v_right) in m/s
         """
         abs_angle = abs(c_heading_angle)
+        # Clamp the speed so that it's not greater than MaxSpeed
+        #print('target distance: ', c_heading_magnitude/100)
+        fBaseAngularWheelSpeed = min(c_heading_magnitude/100, params.BaseSpeed)
         #print('TM, ANGLE, PARAMS: ', turning_mechanism, c_heading_angle, params)
         if turning_mechanism == NO_TURN:
             # Both wheels run at the same base speed => go straight
-            fSpeed1 = params.BaseSpeed
-            fSpeed2 = params.BaseSpeed
+            fSpeed1 = fBaseAngularWheelSpeed
+            fSpeed2 = fBaseAngularWheelSpeed
 
         elif turning_mechanism == HARD_TURN:
             # Turn in place: left = -MaxSpeed, right = +MaxSpeed (pivot turn)
-            fSpeed1 = -params.BaseSpeed
-            fSpeed2 = params.BaseSpeed
+            fSpeed1 = -fBaseAngularWheelSpeed
+            fSpeed2 = fBaseAngularWheelSpeed
 
         elif turning_mechanism == SOFT_TURN:
             # Turn while moving forward
@@ -157,8 +160,8 @@ class Agent:
             #   fSpeed1 = base - base * (1 - factor) = base * factor
             #   fSpeed2 = base + base * (1 - factor) = base * (2 - factor)
             # We'll treat left = fSpeed1, right = fSpeed2
-            fSpeed1 = params.BaseSpeed * fSpeedFactor
-            fSpeed2= params.BaseSpeed * (2.0 - fSpeedFactor)
+            fSpeed1 = fBaseAngularWheelSpeed * fSpeedFactor
+            fSpeed2= fBaseAngularWheelSpeed * (2.0 - fSpeedFactor)
 
         else:
             # Default fallback (should not happen if code is correct)
@@ -215,6 +218,7 @@ class Agent:
     def update_position(self, target_x, target_y, dt):
         """Update the agent's position based on movement rules."""
         target_direction = math.atan2(target_y - self.y, target_x - self.x)
+        target_distance = math.sqrt((target_x - self.x)**2 + (target_y - self.y)**2)
         angle_diff = (target_direction - self.direction + math.pi) % (2 * math.pi) - math.pi
         #print('angle diff: ', angle_diff)
         # (A) Update turning mechanism
@@ -226,6 +230,7 @@ class Agent:
         v_left, v_right = self.compute_wheel_speeds(
             self.wheel_turning_params.turning_mechanism,
             angle_diff,
+            target_distance,
             self.wheel_turning_params
         )
         # (C) Do the differential-drive pose update
@@ -426,13 +431,15 @@ class Simulation:
 
     def setup_visualization(self):
         """Initialize the visualization window."""
-        fig, ax = plt.subplots(figsize=(7, 8))
+        fig, ax = plt.subplots(figsize=(10, 6))
         ax.set_xlim(self.arena_bounds['x_min'], self.arena_bounds['x_max'])
         ax.set_ylim(self.arena_bounds['y_min'], self.arena_bounds['y_max'])
+        ax.set_ylabel("y (m)", fontsize=16)
+        ax.set_xlabel("x (m)", fontsize=16)
 
         # Plot light sources
         for light in self.light_sources.values():
-            ax.scatter(light.x, light.y, color=light.color, s=100, label=f"Light {light.id}")
+            ax.scatter(light.x, light.y, color=light.color, s=100, label=f"Target {light.id}")
 
         # Initialize agent markers
         self.agent_markers = [
@@ -445,7 +452,7 @@ class Simulation:
                              for _ in range(self.num_agents)]
 
         self.time_text = ax.text(0.02, 0.95, '', transform=ax.transAxes)
-        plt.legend()
+        plt.legend(prop={'size': 16})
         return fig, ax
 
     def update_visualization(self, ax, timestep):
@@ -620,7 +627,7 @@ class Simulation:
 
 
 if __name__ == "__main__":
-    with open("config_2_targets.json") as f:
+    with open("config_2_targets_geometry.json") as f:
         config = json.load(f)
 
     simulation = Simulation(config)
